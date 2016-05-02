@@ -338,6 +338,7 @@ namespace Confuzzle
             Random.NextBytes(nonce, 0, nonce.Length);
 
             // Initialize the cipher
+
             var cipher = new GcmBlockCipher(new AesFastEngine());
             var parameters = new AeadParameters(key, MacBitSize, nonce, salt);
             cipher.Init(true, parameters);
