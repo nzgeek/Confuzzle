@@ -1,4 +1,6 @@
-﻿using System;
+﻿#define USE_STREAMS
+
+using System;
 using System.Diagnostics;
 using System.IO;
 using CommandLine;
@@ -118,11 +120,23 @@ namespace Confuzzle
             Console.WriteLine("Encrypt Mode");
             if (!SetPassword(options)) return;
             InitialiseOutputFile(options);
+
+#if USE_STREAMS
+            using (var inputFile = File.Open(options.InputFile, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                using (var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read))
+                {
+                    Encryptor.EncryptWithPassword(inputFile, outputFile, password);
+                }
+            }
+#else
             var fileContents = File.ReadAllText(options.InputFile);
             var stopwatch = Stopwatch.StartNew();
             var encrypted = Encryptor.SimpleEncryptWithPassword(fileContents, password);
             Console.WriteLine($"Encryption complete. {stopwatch.ElapsedMilliseconds:N}\b\b\bms ");
             File.WriteAllText(options.OutputFile, encrypted);
+#endif
+
             if (File.Exists(options.OutputFile))
             {
                 Console.WriteLine($"{options.OutputFile} created successfully.");
@@ -149,6 +163,16 @@ namespace Confuzzle
         {
             Console.WriteLine("Decrypt Mode");
             if (!SetPassword(options)) return;
+
+#if USE_STREAMS
+            using (var inputFile = File.Open(options.InputFile, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                using (var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read))
+                {
+                    Encryptor.DecryptWithPassword(inputFile, outputFile, password);
+                }
+            }
+#else
             var fileContents = File.ReadAllText(options.InputFile);
             var stopwatch = Stopwatch.StartNew();
             var decrypted = Encryptor.SimpleDecryptWithPassword(fileContents, password);
@@ -161,10 +185,12 @@ namespace Confuzzle
 
             InitialiseOutputFile(options);
             File.WriteAllText(options.OutputFile, decrypted);
-            if (File.Exists(options.OutputFile))
-            {
-                Console.WriteLine($"{options.OutputFile} created successfully.");
-            }
+#endif
+
+                if (File.Exists(options.OutputFile))
+                {
+                    Console.WriteLine($"{options.OutputFile} created successfully.");
+                }
         }
 
         private static bool ValidateArgs(Options options)

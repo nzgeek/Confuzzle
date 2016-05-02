@@ -11,6 +11,7 @@ using System.Text;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Generators;
+using Org.BouncyCastle.Crypto.IO;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Security;
@@ -263,15 +264,9 @@ namespace Confuzzle
 
             //Use Random Salt to minimize pre-generated weak password attacks.
             var salt = new byte[SaltBitSize/8];
-            Random.NextBytes(salt);
-
-            generator.Init(
-                PbeParametersGenerator.Pkcs5PasswordToBytes(password.ToCharArray()),
-                salt,
-                Iterations);
 
             //Generate Key
-            var key = (KeyParameter) generator.GenerateDerivedMacParameters(KeyBitSize);
+            var key = GenerateKey(password, out salt);
 
             //Create Full Non Secret Payload
             var payload = new byte[salt.Length + nonSecretPayload.Length];
@@ -310,15 +305,154 @@ namespace Confuzzle
             var salt = new byte[SaltBitSize/8];
             Array.Copy(encryptedMessage, nonSecretPayloadLength, salt, 0, salt.Length);
 
+            //Generate Key
+            var key = GenerateKey(password, salt);
+
+            return SimpleDecrypt(encryptedMessage, key.GetKey(), salt.Length + nonSecretPayloadLength);
+        }
+
+        /// <summary>
+        ///     Encrypts the contents from one stream to another stream, using the supplied password.
+        /// </summary>
+        /// <param name="inputStream">A stream containing cleartext to encrypt.</param>
+        /// <param name="outputStream">A stream that will receive the ciphertext.</param>
+        /// <param name="password">A password used to encrypt the cleartext.</param>
+        public static void EncryptWithPassword(Stream inputStream, Stream outputStream, string password)
+        {
+            // Parameter validation
+            if (inputStream == null || !inputStream.CanRead)
+                throw new ArgumentException("A readable input stream is required.", nameof(inputStream));
+
+            if (outputStream == null || !outputStream.CanWrite)
+                throw new ArgumentException("A writable output stream is required.", nameof(outputStream));
+
+            if (string.IsNullOrWhiteSpace(password) || password.Length < MinPasswordLength)
+                throw new ArgumentException($"Must have a password of at least {MinPasswordLength} characters!", nameof(password));
+
+            // Generate the key with a random salt.
+            byte[] salt;
+            var key = GenerateKey(password, out salt);
+
+            // Generate a random nonce to ensure multiple copies of the file encrypt differently
+            var nonce = new byte[NonceBitSize / 8];
+            Random.NextBytes(nonce, 0, nonce.Length);
+
+            // Initialize the cipher
+            var cipher = new GcmBlockCipher(new AesFastEngine());
+            var parameters = new AeadParameters(key, MacBitSize, nonce, salt);
+            cipher.Init(true, parameters);
+
+            // Write the salt and nonce
+            outputStream.Write(salt, 0, salt.Length);
+            outputStream.Write(nonce, 0, nonce.Length);
+
+            // Prepare to copy the data
+            int inputBytes, outputBytes;
+            var inputBlock = new byte[cipher.GetBlockSize() * 64];
+            var outputBlock = new byte[cipher.GetBlockSize() * 64];
+
+            // Encrypt all data in the input stream
+            while ((inputBytes = inputStream.Read(inputBlock, 0, inputBlock.Length)) > 0)
+            {
+                outputBytes = cipher.ProcessBytes(inputBlock, 0, inputBytes, outputBlock, 0);
+                outputStream.Write(outputBlock, 0, outputBytes);
+            }
+
+            // Finalize the encrypted data
+            outputBytes = cipher.DoFinal(outputBlock, 0);
+            if (outputBytes > 0)
+                outputStream.Write(outputBlock, 0, outputBytes);
+
+            // Flush the output
+            outputStream.Flush();
+        }
+
+        /// <summary>
+        ///     Decrypts the contents from one stream to another stream, using the supplied password.
+        /// </summary>
+        /// <param name="inputStream">A stream containing ciphertext to decrypt.</param>
+        /// <param name="outputStream">A stream that will receive the cleartext.</param>
+        /// <param name="password">A password used to decrypt the ciphertext.</param>
+        public static void DecryptWithPassword(Stream inputStream, Stream outputStream, string password)
+        {
+            // Parameter validation
+            if (inputStream == null || !inputStream.CanRead)
+                throw new ArgumentException("A readable input stream is required.", nameof(inputStream));
+
+            if (outputStream == null || !outputStream.CanWrite)
+                throw new ArgumentException("A writable output stream is required.", nameof(outputStream));
+
+            if (string.IsNullOrWhiteSpace(password) || password.Length < MinPasswordLength)
+                throw new ArgumentException($"Must have a password of at least {MinPasswordLength} characters!", nameof(password));
+
+            // Read the salt from the file
+            var salt = new byte[SaltBitSize/8];
+            if (inputStream.Read(salt, 0, salt.Length) != salt.Length)
+                throw new InvalidDataException("Encrypted data missing password salt.");
+
+            // Read the nonce from the file
+            var nonce = new byte[NonceBitSize / 8];
+            if (inputStream.Read(nonce, 0, nonce.Length) != nonce.Length)
+                throw new InvalidDataException("Encrypted data missing password nonce.");
+
+            // Generate the key with the saved salt
+            var key = GenerateKey(password, salt);
+
+            // Initialize the cipher
+            var cipher = new GcmBlockCipher(new AesFastEngine());
+            var parameters = new AeadParameters(key, MacBitSize, nonce, salt);
+            cipher.Init(false , parameters);
+
+            // Prepare to copy the data
+            int inputBytes, outputBytes;
+            var inputBlock = new byte[cipher.GetBlockSize() * 64];
+            var outputBlock = new byte[cipher.GetBlockSize() * 64];
+
+            // Encrypt all data in the input stream
+            while ((inputBytes = inputStream.Read(inputBlock, 0, inputBlock.Length)) > 0)
+            {
+                outputBytes = cipher.ProcessBytes(inputBlock, 0, inputBytes, outputBlock, 0);
+                outputStream.Write(outputBlock, 0, outputBytes);
+            }
+
+            // Finalize the encrypted data
+            outputBytes = cipher.DoFinal(outputBlock, 0);
+            if (outputBytes > 0)
+                outputStream.Write(outputBlock, 0, outputBytes);
+
+            // Flush the output
+            outputStream.Flush();
+        }
+
+        /// <summary>
+        ///     Generates a cipher key using a new, random salt.
+        /// </summary>
+        /// <param name="password">A password that will be converted to a cipher key.</param>
+        /// <param name="salt">Receives the generated salt.</param>
+        /// <returns>Returns a <see cref="KeyParameter"/> containing the cipher key.</returns>
+        private static KeyParameter GenerateKey(string password, out byte[] salt)
+        {
+            salt = new byte[SaltBitSize / 8];
+            Random.NextBytes(salt);
+
+            return GenerateKey(password, salt);
+        }
+
+        /// <summary>
+        ///     Generates a cipher key using the specified salt.
+        /// </summary>
+        /// <param name="password">A password that will be converted to a cipher key.</param>
+        /// <param name="salt">A salt used to convert the password.</param>
+        /// <returns>Returns a <see cref="KeyParameter"/> containing the cipher key.</returns>
+        private static KeyParameter GenerateKey(string password, byte[] salt)
+        {
+            var generator = new Pkcs5S2ParametersGenerator();
             generator.Init(
                 PbeParametersGenerator.Pkcs5PasswordToBytes(password.ToCharArray()),
                 salt,
                 Iterations);
 
-            //Generate Key
-            var key = (KeyParameter) generator.GenerateDerivedMacParameters(KeyBitSize);
-
-            return SimpleDecrypt(encryptedMessage, key.GetKey(), salt.Length + nonSecretPayloadLength);
+            return (KeyParameter)generator.GenerateDerivedMacParameters(KeyBitSize);
         }
     }
 }
