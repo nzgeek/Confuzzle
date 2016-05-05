@@ -51,7 +51,6 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Base64Stream.cs" />
     <Compile Include="Encyptor.cs" />
     <Compile Include="Options.cs" />
     <Compile Include="Program.cs" />
