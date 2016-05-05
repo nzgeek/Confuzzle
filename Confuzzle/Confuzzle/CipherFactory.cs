@@ -1,11 +1,17 @@
 ﻿using System;
-using System.Collections.Concurrent;
-using System.Linq;
 using System.Security.Cryptography;
-using System.Threading.Tasks;
 
 namespace Confuzzle
 {
+    public interface ICipherFactory
+    {
+        SymmetricAlgorithm CreateCipher();
+
+        HashAlgorithm CreateHash();
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+
     public class CipherFactory<TCipher, THash> : ICipherFactory
         where TCipher : SymmetricAlgorithm, new()
         where THash : HashAlgorithm, new()
@@ -22,6 +28,8 @@ namespace Confuzzle
             return new THash();
         }
     }
+
+    ////////////////////////////////////////////////////////////////////////////
 
     public class CipherFactory : CipherFactory<AesManaged, SHA256CryptoServiceProvider>
     {

@@ -51,7 +51,7 @@ namespace Confuzzle
 
         public static CipherStream Create(Stream stream, string password, ICipherFactory cipherFactory = null, byte[] nonce = null)
         {
-            var key = new KeyStretcher(password, 100);
+            var key = new KeyStretcher(password);
             var ctrStream = new CipherStream(stream, cipherFactory, key);
             ctrStream.SetupParameters(key.Salt, nonce);
             return ctrStream;
@@ -66,7 +66,7 @@ namespace Confuzzle
 
         public static CipherStream Open(Stream stream, string password, ICipherFactory cipherFactory = null)
         {
-            var key = new KeyStretcher(password, 100);
+            var key = new KeyStretcher(password);
             var ctrStream = new CipherStream(stream, cipherFactory, key);
             ctrStream.LoadParameters();
             return ctrStream;
@@ -226,24 +226,21 @@ namespace Confuzzle
 
         private byte[] CreateIV()
         {
-            var hashSeed = new byte[Nonce.Length + UserData.Length];
-            Array.Copy(Nonce, 0, hashSeed, 0, Nonce.Length);
-            Array.Copy(UserData, 0, hashSeed, Nonce.Length, UserData.Length);
-
-            var iv = new byte[_blockLength];
-
             using (var hashFunction = _cipherFactory.CreateHash())
             {
-                var hash = hashFunction.ComputeHash(hashSeed);
+                hashFunction.TransformBlock(Nonce, 0, Nonce.Length, Nonce, 0);
+                hashFunction.TransformFinalBlock(UserData, 0, UserData.Length);
 
+                var hash = hashFunction.Hash;
+
+                var iv = new byte[_blockLength];
                 for (var index = 0; index < iv.Length; index += hash.Length)
                 {
                     int copySize = Math.Min(hash.Length, iv.Length - index);
                     Array.Copy(hash, 0, iv, index, copySize);
                 }
+                return iv;
             }
-
-            return iv;
         }
 
         private ICryptoTransform CreateEncryptor()

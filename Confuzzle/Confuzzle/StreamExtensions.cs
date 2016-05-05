@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Confuzzle
 {
-    static class StreamExtensions
+    internal static class StreamExtensions
     {
         public static ushort ReadUShort(this Stream stream)
         {
