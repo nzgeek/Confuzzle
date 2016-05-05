@@ -1,4 +1,6 @@
-﻿using System;
+﻿#define NEW_STREAMS
+
+using System;
 using System.Diagnostics;
 using System.IO;
 using CommandLine;
@@ -124,7 +126,14 @@ namespace Confuzzle
             {
                 using (var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read))
                 {
+#if NEW_STREAMS
+                    using (var cryptoStream = CipherStream.Create(outputFile, password))
+                    {
+                        inputFile.CopyTo(cryptoStream);
+                    }
+#else
                     Encryptor.EncryptWithPassword(inputFile, outputFile, password);
+#endif
                 }
             }
             Console.WriteLine($"Encryption complete. {stopwatch.ElapsedMilliseconds:N}\b\b\bms ");
@@ -162,7 +171,14 @@ namespace Confuzzle
             {
                 using (var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read))
                 {
+#if NEW_STREAMS
+                    using (var cryptoStream = CipherStream.Open(inputFile, password))
+                    {
+                        cryptoStream.CopyTo(outputFile);
+                    }
+#else
                     Encryptor.DecryptWithPassword(inputFile, outputFile, password);
+#endif
                 }
             }
             Console.WriteLine($"Decryption complete. {stopwatch.ElapsedMilliseconds:N}\b\b\bms ");
