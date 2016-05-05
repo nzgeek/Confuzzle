@@ -1,6 +1,4 @@
-﻿#define USE_STREAMS
-
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using CommandLine;
@@ -122,32 +120,13 @@ namespace Confuzzle
             InitialiseOutputFile(options);
 
             var stopwatch = Stopwatch.StartNew();
-
-#if USE_STREAMS
             using (var inputFile = File.Open(options.InputFile, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                if (options.Base64)
+                using (var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read))
                 {
-                    var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read);
-                    using (var outputBase64 = new Base64Writer(outputFile))
-                    {
-                        Encryptor.EncryptWithPassword(inputFile, outputBase64, password);
-                    }
-                }
-                else
-                {
-                    using (var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read))
-                    {
-                        Encryptor.EncryptWithPassword(inputFile, outputFile, password);
-                    }
+                    Encryptor.EncryptWithPassword(inputFile, outputFile, password);
                 }
             }
-#else
-            var fileContents = File.ReadAllText(options.InputFile);
-            var encrypted = Encryptor.SimpleEncryptWithPassword(fileContents, password);
-            File.WriteAllText(options.OutputFile, encrypted);
-#endif
-
             Console.WriteLine($"Encryption complete. {stopwatch.ElapsedMilliseconds:N}\b\b\bms ");
 
             if (File.Exists(options.OutputFile))
@@ -179,42 +158,15 @@ namespace Confuzzle
             InitialiseOutputFile(options);
 
             var stopwatch = Stopwatch.StartNew();
-
-#if USE_STREAMS
-            if (options.Base64)
+            using (var inputFile = File.Open(options.InputFile, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                var inputFile = File.Open(options.InputFile, FileMode.Open, FileAccess.Read, FileShare.Read);
-                using (var inputBase64 = new Base64Reader(inputFile))
+                using (var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read))
                 {
-                    using (var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read))
-                    {
-                        Encryptor.DecryptWithPassword(inputBase64, outputFile, password);
-                    }
+                    Encryptor.DecryptWithPassword(inputFile, outputFile, password);
                 }
             }
-            else
-            {
-                using (var inputFile = File.Open(options.InputFile, FileMode.Open, FileAccess.Read, FileShare.Read))
-                {
-                    using (var outputFile = File.Open(options.OutputFile, FileMode.Create, FileAccess.Write, FileShare.Read))
-                    {
-                        Encryptor.DecryptWithPassword(inputFile, outputFile, password);
-                    }
-                }
-            }
-#else
-            var fileContents = File.ReadAllText(options.InputFile);
-            var decrypted = Encryptor.SimpleDecryptWithPassword(fileContents, password);
-            if (decrypted == null)
-            {
-                Console.WriteLine("Decryption FAILED!");
-                throw new UserAbortException();
-            }
-
-            File.WriteAllText(options.OutputFile, decrypted);
-#endif
-
             Console.WriteLine($"Decryption complete. {stopwatch.ElapsedMilliseconds:N}\b\b\bms ");
+
             if (File.Exists(options.OutputFile))
             {
                 Console.WriteLine($"{options.OutputFile} created successfully.");

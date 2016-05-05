@@ -20,9 +20,6 @@ public class Options
     [Option('s', "silent", HelpText = "Silent mode. Will not prompt for password or confirmation.")]
     public bool Silent { get; set; }
 
-    [Option('b', "base64", HelpText = "The encrypted data is encoded with Base64.")]
-    public bool Base64 { get; set; }
-
     [Option('p', "password", HelpText = "The password to use.  NOT RECOMMENDED FOR INTERACTIVE MODE - USE ONLY FOR SCRIPTING. Password will be prompted from user when Silent = false.")]
     public string Password { get; set; }
 
