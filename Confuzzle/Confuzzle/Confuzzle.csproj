@@ -49,6 +49,7 @@
   <ItemGroup>
     <Compile Include="CipherStream.cs" />
     <Compile Include="CipherFactory.cs" />
+    <Compile Include="CtrBlock.cs" />
     <Compile Include="KeyStretcher.cs" />
     <Compile Include="Options.cs" />
     <Compile Include="Program.cs" />

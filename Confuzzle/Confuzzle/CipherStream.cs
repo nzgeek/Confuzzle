@@ -33,10 +33,6 @@ namespace Confuzzle
         private static readonly RandomNumberGenerator _rng = new RNGCryptoServiceProvider();
 
         private readonly Stream _stream;
-        private readonly int _blockLength;
-
-        private ICipherFactory _cipherFactory;
-        private KeyStretcher _key;
         private ICryptoTransform _encryptor;
         private byte[] _ctrBlock;
         private long _startPosition;
@@ -75,16 +71,22 @@ namespace Confuzzle
         public CipherStream(Stream stream, ICipherFactory cipherFactory, KeyStretcher key)
         {
             _stream = stream;
-            _cipherFactory = cipherFactory ?? CipherFactory.Default;
-            _key = key;
+            CipherFactory = cipherFactory ?? Confuzzle.CipherFactory.Default;
+            Key = key;
 
-            using (var cipher = _cipherFactory.CreateCipher())
-                _blockLength = cipher.BlockSize / 8;
+            using (var cipher = CipherFactory.CreateCipher())
+                BlockLength = cipher.BlockSize / 8;
         }
 
-        public int MinNonceLength => _blockLength / 2;
+        internal int BlockLength { get; }
 
-        public int MaxNonceLength => _blockLength;
+        internal ICipherFactory CipherFactory { get; }
+
+        internal KeyStretcher Key { get; }
+
+        public int MinNonceLength => BlockLength / 2;
+
+        public int MaxNonceLength => BlockLength;
 
         public byte[] Nonce { get; private set; }
 
@@ -200,40 +202,40 @@ namespace Confuzzle
         private byte[] CreateCtrBlock(long position)
         {
             // Convert the block number to a series of bytes, most significant byte first.
-            var blockNumber = (position / _blockLength) + 1;
+            var blockNumber = (position / BlockLength) + 1;
             var blockNumberBytes = BitConverter.GetBytes(blockNumber);
             if (BitConverter.IsLittleEndian)
                 Array.Reverse(blockNumberBytes);
 
             // Allocate a new counter block.
-            var ctrSeed = new byte[_blockLength];
+            var ctrSeed = new byte[BlockLength];
             // Copy in the nonce.
             Array.Copy(Nonce, ctrSeed, Nonce.Length);
             // Copy in the block number bytes using XOR. Depending on the length of the nonce, this might alter some
             // of the nonce bits.
             for (var byteIndex = 0; byteIndex < blockNumberBytes.Length && byteIndex < ctrSeed.Length; ++byteIndex)
-                ctrSeed[_blockLength - blockNumberBytes.Length + byteIndex] ^= blockNumberBytes[byteIndex];
+                ctrSeed[BlockLength - blockNumberBytes.Length + byteIndex] ^= blockNumberBytes[byteIndex];
 
             // Ensure there's an encryptor.
             if (_encryptor == null)
                 _encryptor = CreateEncryptor();
 
             // Encrypt the block using the encryptor.
-            var ctrBlock = new byte[_blockLength];
+            var ctrBlock = new byte[BlockLength];
             _encryptor.TransformBlock(ctrSeed, 0, ctrSeed.Length, ctrBlock, 0);
             return ctrBlock;
         }
 
         private byte[] CreateIV()
         {
-            using (var hashFunction = _cipherFactory.CreateHash())
+            using (var hashFunction = CipherFactory.CreateHash())
             {
                 hashFunction.TransformBlock(Nonce, 0, Nonce.Length, Nonce, 0);
                 hashFunction.TransformFinalBlock(UserData, 0, UserData.Length);
 
                 var hash = hashFunction.Hash;
 
-                var iv = new byte[_blockLength];
+                var iv = new byte[BlockLength];
                 for (var index = 0; index < iv.Length; index += hash.Length)
                 {
                     int copySize = Math.Min(hash.Length, iv.Length - index);
@@ -245,9 +247,9 @@ namespace Confuzzle
 
         private ICryptoTransform CreateEncryptor()
         {
-            var cipher = _cipherFactory.CreateCipher();
+            var cipher = CipherFactory.CreateCipher();
 
-            cipher.Key = _key.GetKeyBytes(cipher, 256);
+            cipher.Key = Key.GetKeyBytes(cipher, 256);
             cipher.IV = CreateIV();
             cipher.Mode = CipherMode.ECB;
             cipher.Padding = PaddingMode.None;
@@ -260,7 +262,7 @@ namespace Confuzzle
             Nonce = nonce;
             UserData = userData;
 
-            _key.Reset(userData, _key.IterationCount);
+            Key.Reset(userData, Key.IterationCount);
 
             if (_encryptor != null)
                 _encryptor.Dispose();
@@ -313,7 +315,7 @@ namespace Confuzzle
                 if (value < 0)
                     break;
 
-                var ctrIndex = _position % _blockLength;
+                var ctrIndex = _position % BlockLength;
                 if (_ctrBlock == null || ctrIndex == 0)
                     _ctrBlock = CreateCtrBlock(_position);
 
@@ -360,7 +362,7 @@ namespace Confuzzle
         {
             for (var index = 0; index < count; ++index)
             {
-                var ctrIndex = _position % _blockLength;
+                var ctrIndex = _position % BlockLength;
                 if (_ctrBlock == null || ctrIndex == 0)
                     _ctrBlock = CreateCtrBlock(_position);
 
