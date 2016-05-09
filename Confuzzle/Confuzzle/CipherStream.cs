@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.IO;
 using System.Security.Cryptography;
-using System.Threading.Tasks;
 
 namespace Confuzzle
 {
@@ -24,17 +21,14 @@ namespace Confuzzle
      * The headerDataLength field includes the 4 bytes used to hold nonceLength and userDataLength.
      **/
 
-
-
     class CipherStream : Stream
     {
         private const int HeaderOverhead = 2 * sizeof(ushort);
 
-        private static readonly RandomNumberGenerator _rng = new RNGCryptoServiceProvider();
+        public static RandomNumberGenerator Rng { get; set; } = new RNGCryptoServiceProvider();
 
         private readonly Stream _stream;
-        private ICryptoTransform _encryptor;
-        private byte[] _ctrBlock;
+        private CtrModeTransform _ctrTransform;
         private long _startPosition;
         private long _position;
 
@@ -76,6 +70,8 @@ namespace Confuzzle
 
             using (var cipher = CipherFactory.CreateCipher())
                 BlockLength = cipher.BlockSize / 8;
+
+            _ctrTransform = new CtrModeTransform(this);
         }
 
         internal int BlockLength { get; }
@@ -172,7 +168,7 @@ namespace Confuzzle
                 // It will always be at least the minimum length, due to an earlier check.
                 int availableNonceLength = 0xFFFF - (userData.Length + 4);
                 nonce = new byte[Math.Min(availableNonceLength, MaxNonceLength)];
-                _rng.GetBytes(nonce);
+                Rng.GetBytes(nonce);
             }
 
             // Write the parameters to the stream.
@@ -191,84 +187,21 @@ namespace Confuzzle
 
             if (disposing)
             {
-                if (_encryptor != null)
-                    _encryptor.Dispose();
-                _encryptor = null;
-
-
-            }
-        }
-
-        private byte[] CreateCtrBlock(long position)
-        {
-            // Convert the block number to a series of bytes, most significant byte first.
-            var blockNumber = (position / BlockLength) + 1;
-            var blockNumberBytes = BitConverter.GetBytes(blockNumber);
-            if (BitConverter.IsLittleEndian)
-                Array.Reverse(blockNumberBytes);
-
-            // Allocate a new counter block.
-            var ctrSeed = new byte[BlockLength];
-            // Copy in the nonce.
-            Array.Copy(Nonce, ctrSeed, Nonce.Length);
-            // Copy in the block number bytes using XOR. Depending on the length of the nonce, this might alter some
-            // of the nonce bits.
-            for (var byteIndex = 0; byteIndex < blockNumberBytes.Length && byteIndex < ctrSeed.Length; ++byteIndex)
-                ctrSeed[BlockLength - blockNumberBytes.Length + byteIndex] ^= blockNumberBytes[byteIndex];
-
-            // Ensure there's an encryptor.
-            if (_encryptor == null)
-                _encryptor = CreateEncryptor();
-
-            // Encrypt the block using the encryptor.
-            var ctrBlock = new byte[BlockLength];
-            _encryptor.TransformBlock(ctrSeed, 0, ctrSeed.Length, ctrBlock, 0);
-            return ctrBlock;
-        }
-
-        private byte[] CreateIV()
-        {
-            using (var hashFunction = CipherFactory.CreateHash())
-            {
-                hashFunction.TransformBlock(Nonce, 0, Nonce.Length, Nonce, 0);
-                hashFunction.TransformFinalBlock(UserData, 0, UserData.Length);
-
-                var hash = hashFunction.Hash;
-
-                var iv = new byte[BlockLength];
-                for (var index = 0; index < iv.Length; index += hash.Length)
+                if (_ctrTransform != null)
                 {
-                    int copySize = Math.Min(hash.Length, iv.Length - index);
-                    Array.Copy(hash, 0, iv, index, copySize);
+                    _ctrTransform.Dispose();
+                    _ctrTransform = null;
                 }
-                return iv;
             }
-        }
-
-        private ICryptoTransform CreateEncryptor()
-        {
-            var cipher = CipherFactory.CreateCipher();
-
-            cipher.Key = Key.GetKeyBytes(cipher, 256);
-            cipher.IV = CreateIV();
-            cipher.Mode = CipherMode.ECB;
-            cipher.Padding = PaddingMode.None;
-
-            return cipher.CreateEncryptor();
         }
 
         private void ResetState(byte[] nonce, byte[] userData)
         {
             Nonce = nonce;
-            UserData = userData;
+            UserData = userData ?? new byte[0];
 
-            Key.Reset(userData, Key.IterationCount);
+            Key.Salt = UserData;
 
-            if (_encryptor != null)
-                _encryptor.Dispose();
-            _encryptor = null;
-
-            _ctrBlock = null;
             _startPosition = _stream.CanSeek ? _stream.Position : 0;
             _position = 0;
         }
@@ -308,23 +241,15 @@ namespace Confuzzle
 
         public override int Read(byte[] buffer, int offset, int count)
         {
-            int bytesRead = 0;
-            for (; bytesRead < count; ++bytesRead)
+            var sizeRead = _stream.Read(buffer, offset, count);
+
+            if (sizeRead > 0)
             {
-                int value = _stream.ReadByte();
-                if (value < 0)
-                    break;
-
-                var ctrIndex = _position % BlockLength;
-                if (_ctrBlock == null || ctrIndex == 0)
-                    _ctrBlock = CreateCtrBlock(_position);
-
-                buffer[offset + bytesRead] = (byte)((byte)value ^ _ctrBlock[ctrIndex]);
-
-                ++_position;
+                _ctrTransform.Transform(_position, buffer, offset, sizeRead);
+                _position += sizeRead;
             }
 
-            return bytesRead;
+            return sizeRead;
         }
 
         public override long Seek(long offset, SeekOrigin origin)
@@ -342,13 +267,12 @@ namespace Confuzzle
 
                 default:
                     position = _stream.Seek(offset, origin);
-                if (position < _startPosition)
-                    position = _stream.Seek(_startPosition, SeekOrigin.Begin);
+                    if (position < _startPosition)
+                        position = _stream.Seek(_startPosition, SeekOrigin.Begin);
                     break;
             }
 
             _position = position - _startPosition;
-            _ctrBlock = null;
 
             return _position;
         }
@@ -360,17 +284,14 @@ namespace Confuzzle
 
         public override void Write(byte[] buffer, int offset, int count)
         {
-            for (var index = 0; index < count; ++index)
-            {
-                var ctrIndex = _position % BlockLength;
-                if (_ctrBlock == null || ctrIndex == 0)
-                    _ctrBlock = CreateCtrBlock(_position);
+            var writeBuffer = new byte[count];
+            Array.Copy(buffer, offset, writeBuffer, 0, count);
 
-                var value = buffer[offset + index] ^ _ctrBlock[ctrIndex];
-                _stream.WriteByte((byte)(value));
+            _ctrTransform.Transform(_position, writeBuffer, 0, count);
 
-                ++_position;
-            }
+            _stream.Write(writeBuffer);
+
+            _position += count;
         }
 
         #endregion

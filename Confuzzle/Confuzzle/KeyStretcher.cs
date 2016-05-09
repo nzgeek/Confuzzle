@@ -89,13 +89,6 @@ namespace Confuzzle
             return GetKeyBytes(maxLegalSize);
         }
 
-        public void Reset(byte[] salt, int iterationCount)
-        {
-            Salt = salt;
-            IterationCount = iterationCount;
-            Reset();
-        }
-
         private static int GetMaxKeySize(KeySizes keySizes, int maxSize)
         {
             for (var keySize = keySizes.MaxSize; keySize >= keySizes.MinSize; keySize -= keySizes.SkipSize)
