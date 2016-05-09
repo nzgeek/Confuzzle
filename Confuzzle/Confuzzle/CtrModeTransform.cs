@@ -202,8 +202,6 @@ namespace Confuzzle
                 block.Array[offset] ^= blockNumberByte;
                 blockNumber >>= 8;
             }
-
-            //block.Write($"CTR block @ {blockNumber}");
         }
 
         #region IDisposable

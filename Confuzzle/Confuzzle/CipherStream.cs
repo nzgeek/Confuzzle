@@ -19,8 +19,14 @@ namespace Confuzzle
     /// </remarks>
     public class CipherStream : Stream
     {
+        /// <summary>
+        ///     The number of bytes in the header that's used by the data length fields.
+        /// </summary>
         private const int HeaderOverhead = 2 * sizeof(ushort);
 
+        /// <summary>
+        ///     A random number generator for creating nonces.
+        /// </summary>
         public static RandomNumberGenerator Rng { get; set; } = new RNGCryptoServiceProvider();
 
         private readonly Stream _stream;
@@ -70,20 +76,47 @@ namespace Confuzzle
             _ctrTransform = new CtrModeTransform(this);
         }
 
+        /// <summary>
+        ///     The length of cipher processing blocks in bytes.
+        /// </summary>
         internal int BlockLength { get; }
 
+        /// <summary>
+        ///     The factory used to create cryptographic algorithms.
+        /// </summary>
         internal ICipherFactory CipherFactory { get; }
 
+        /// <summary>
+        ///     The key used during cryptographic transformations.
+        /// </summary>
         internal KeyStretcher Key { get; }
 
+        /// <summary>
+        ///     The minimum length of the nonce in bytes.
+        /// </summary>
         public int MinNonceLength => BlockLength / 2;
 
+        /// <summary>
+        ///     The maximum length of the nonce in bytes.
+        /// </summary>
         public int MaxNonceLength => BlockLength;
 
+        /// <summary>
+        ///     A random value used to ensure that each encrypted file has different ciphertext.
+        /// </summary>
         public byte[] Nonce { get; private set; }
 
+        /// <summary>
+        ///     Any user-supplied data that should be saved with the stream.
+        /// </summary>
+        /// <remarks>
+        ///     The password salt is stored in this field.
+        /// </remarks>
         public byte[] UserData { get; private set; }
 
+        /// <summary>
+        ///     Loads existing cryptographic parameters from the underlying stream.
+        /// </summary>
         public void LoadParameters()
         {
             // Save the start position in case of errors.
@@ -237,8 +270,10 @@ namespace Confuzzle
 
         public override int Read(byte[] buffer, int offset, int count)
         {
+            // Read data into the buffer.
             var sizeRead = _stream.Read(buffer, offset, count);
 
+            // If data was available, transform it and update the stream position.
             if (sizeRead > 0)
             {
                 _ctrTransform.Transform(_position, buffer, offset, sizeRead);
@@ -280,13 +315,15 @@ namespace Confuzzle
 
         public override void Write(byte[] buffer, int offset, int count)
         {
+            // Copy the data so that the original values are not modified.
             var writeBuffer = new byte[count];
             Array.Copy(buffer, offset, writeBuffer, 0, count);
 
+            // Transform the data and write it.
             _ctrTransform.Transform(_position, writeBuffer, 0, count);
-
             _stream.Write(writeBuffer);
 
+            // Update the stream position.
             _position += count;
         }
 
