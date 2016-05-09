@@ -4,24 +4,20 @@ using System.Security.Cryptography;
 
 namespace Confuzzle
 {
-    /**
-     * The layout of the stream header is:
-     * 
-     *      struct StreamHeader
-     *      {
-     *          ushort headerDataLength;
-     *     
-     *          ushort nonceLength;
-     *          byte[] nonce;
-     *     
-     *          ushort userDataLength;
-     *          byte[] userData;
-     *      }
-     * 
-     * The headerDataLength field includes the 4 bytes used to hold nonceLength and userDataLength.
-     **/
-
-    class CipherStream : Stream
+    /// <summary>
+    ///     A filter stream that encrypts and decrypts data to/from an underlying stream.
+    /// </summary>
+    /// <remarks>
+    ///     The encrypted data starts with a header that contains information necessary to perform the decryption.
+    ///
+    ///     The layout of the header is as follows:
+    ///     * A 16-bit unsigned integer saying how much data is in the rest of the header.
+    ///     * A 16-bit unsigned integer saying how long the nonce is.
+    ///     * Variable length nonce.
+    ///     * A 16-bit unsigned integer saying how long the user data (password salt) is.
+    ///     * Variable length user data.
+    /// </remarks>
+    public class CipherStream : Stream
     {
         private const int HeaderOverhead = 2 * sizeof(ushort);
 
