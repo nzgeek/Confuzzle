@@ -122,9 +122,9 @@ namespace Confuzzle
             using (var hashFunction = _stream.CipherFactory.CreateHash())
             {
                 // The IV is based on the nonce and any associated user data.
-                var ivSeed = new byte[_stream.Nonce.Length + _stream.UserData.Length];
+                var ivSeed = new byte[_stream.Nonce.Length + _stream.PasswordSalt.Length];
                 Array.Copy(_stream.Nonce, 0, ivSeed, 0, _stream.Nonce.Length);
-                Array.Copy(_stream.UserData, 0, ivSeed, _stream.Nonce.Length, _stream.UserData.Length);
+                Array.Copy(_stream.PasswordSalt, 0, ivSeed, _stream.Nonce.Length, _stream.PasswordSalt.Length);
 
                 // Fill the IV using the hash of the seed. This may use only part of the hash, or may repeat some or all
                 // of the hash.
@@ -193,14 +193,17 @@ namespace Confuzzle
             // Copy in the empty seed data.
             Array.Copy(_ctrSeed, 0, block.Array, block.Offset, _blockLength);
 
-            // XOR in the block number at the end of the CTR seed block. The least significant byte goes at the end.
+            // Update the CTR seed block with the block number. This starts at the end of the block and works backwards.
             for (var offset = block.Offset + _blockLength - 1;
                 offset >= block.Offset && blockNumber != 0;
                 --offset)
             {
+                // The least significant byte of the block number.
                 var blockNumberByte = (byte) (blockNumber & 0xFF);
-                block.Array[offset] ^= blockNumberByte;
                 blockNumber >>= 8;
+
+                // XOR the counter byte value into the block.
+                block.Array[offset] ^= blockNumberByte;
             }
         }
 

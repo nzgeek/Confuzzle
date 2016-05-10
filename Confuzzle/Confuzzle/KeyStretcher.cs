@@ -49,7 +49,7 @@ namespace Confuzzle
         /// <param name="password">The password to stretch.</param>
         /// <param name="salt">The salt used during password stretching.</param>
         public KeyStretcher(string password, byte[] salt)
-            : base(password, salt, DefaultIterationCount)
+            : base(password, salt ?? GenerateSalt(DefaultSaltSize), DefaultIterationCount)
         {
         }
 
@@ -60,7 +60,7 @@ namespace Confuzzle
         /// <param name="salt">The salt used during password stretching.</param>
         /// <param name="iterationCount">The number of iterations used during password stretching.</param>
         public KeyStretcher(string password, byte[] salt, int iterationCount)
-            : base(password, salt, iterationCount)
+            : base(password, salt ?? GenerateSalt(DefaultSaltSize), iterationCount)
         {
         }
 
@@ -89,7 +89,7 @@ namespace Confuzzle
         /// <param name="password">The password to stretch.</param>
         /// <param name="salt">The salt used during password stretching.</param>
         public KeyStretcher(byte[] password, byte[] salt)
-            : base(password, salt, DefaultIterationCount)
+            : base(password, salt ?? GenerateSalt(DefaultSaltSize), DefaultIterationCount)
         {
         }
 
@@ -100,7 +100,7 @@ namespace Confuzzle
         /// <param name="salt">The salt used during password stretching.</param>
         /// <param name="iterationCount">The number of iterations used during password stretching.</param>
         public KeyStretcher(byte[] password, byte[] salt, int iterationCount)
-            : base(password, salt, iterationCount)
+            : base(password, salt ?? GenerateSalt(DefaultSaltSize), iterationCount)
         {
         }
 
